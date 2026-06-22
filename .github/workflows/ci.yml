@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ["8.1", "8.2", "8.3"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: json, mbstring
+          coverage: none
+          tools: composer:v2
+
+      - name: Validate composer.json
+        run: composer validate --strict
+
+      - name: Lint (php -l) all sources
+        run: find src tests -name '*.php' -print0 | xargs -0 -n1 -P4 php -l
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Run tests
+        run: vendor/bin/phpunit
+
+  release:
+    # Auto-version on every push to main. semantic-release analyzes the conventional
+    # commits, computes the next version, and cuts a GitHub release + vX.Y.Z tag.
+    # PHP has NO build artifact and NO registry token: Packagist auto-syncs the new
+    # tag via its GitHub webhook, so this job needs no secrets and runs unguarded.
+    # No releasable commits (only chore/docs/ci) → no release.
+    needs: build-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create git tags + GitHub releases
+      issues: write     # semantic-release comments on resolved issues/PRs
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # semantic-release needs full history + tags
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Semantic release
+        run: npx --yes -p semantic-release -p @semantic-release/exec semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
