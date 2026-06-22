@@ -41,7 +41,7 @@ final class TestSupport
             requestFactory: $factory,
             streamFactory: $factory,
             tokenProvider: $tokenProvider,
-            retrySleeper: static fn (float $s): null => null,
+            retrySleeper: static fn (float $s) => null,
             retryJitter: static fn (): float => 0.5,
         );
     }

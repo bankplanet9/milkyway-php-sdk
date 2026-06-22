@@ -13,7 +13,7 @@ use JsonException;
  *
  * The Payments API encodes money as raw JSON numbers (e.g. 1267500.00). PHP's
  * native json_decode would coerce these to binary floats and lose precision, so
- * we decode with JSON_BIG_INT_AS_STRING and, crucially, re-read decimals from
+ * we decode with JSON_BIGINT_AS_STRING and, crucially, re-read decimals from
  * their original textual form. Callers build BigDecimal from the string the wire
  * actually carried — never from a float.
  */
@@ -30,7 +30,7 @@ final class Json
     public static function decodeObject(string $body): array
     {
         try {
-            $decoded = json_decode($body, true, 512, JSON_THROW_ON_ERROR | JSON_BIG_INT_AS_STRING);
+            $decoded = json_decode($body, true, 512, JSON_THROW_ON_ERROR | JSON_BIGINT_AS_STRING);
         } catch (JsonException $e) {
             throw new MilkywayApiException(0, 'Failed to parse the API response.', $body, $e);
         }
