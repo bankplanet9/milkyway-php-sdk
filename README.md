@@ -1,6 +1,7 @@
 # MilkyWay Payments SDK for PHP
 
 [![Packagist](https://img.shields.io/packagist/v/bankplanet9/milkyway-payments.svg?logo=packagist)](https://packagist.org/packages/bankplanet9/milkyway-payments)
+[![Downloads](https://img.shields.io/packagist/dm/bankplanet9/milkyway-payments.svg)](https://packagist.org/packages/bankplanet9/milkyway-payments)
 [![CI](https://github.com/bankplanet9/milkyway-php-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/bankplanet9/milkyway-php-sdk/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
