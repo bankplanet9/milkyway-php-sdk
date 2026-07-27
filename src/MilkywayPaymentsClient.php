@@ -16,6 +16,7 @@ use Bankplanet9\MilkywayPayments\Internal\AuthHttpClient;
 use Bankplanet9\MilkywayPayments\Internal\Json;
 use Bankplanet9\MilkywayPayments\Internal\RetryingHttpClient;
 use Bankplanet9\MilkywayPayments\Model\CancelResult;
+use Bankplanet9\MilkywayPayments\Model\Destination;
 use Bankplanet9\MilkywayPayments\Model\PayRequest;
 use Bankplanet9\MilkywayPayments\Model\PostcheckResult;
 use Bankplanet9\MilkywayPayments\Model\PrecheckRequest;
@@ -113,6 +114,56 @@ final class MilkywayPaymentsClient
         $body = (string) $response->getBody();
         $this->throwIfError($response, $body);
         return $body;
+    }
+
+    /**
+     * GET discovery — the catalog of payout destinations and the services each
+     * offers. Pass an ISO 3166-1 alpha-2 country (case-insensitive) to filter to
+     * one country, or omit it to list every destination. The per-service `data`
+     * JSON Schema is excluded here — fetch it via {@see self::serviceSchema()}.
+     *
+     * @return list<Destination>
+     *
+     * @throws MilkywayApiException
+     */
+    public function discovery(?string $country = null): array
+    {
+        $uri = self::PAYMENTS_PATH . '/discovery';
+        if ($country !== null && trim($country) !== '') {
+            $uri .= '?country=' . rawurlencode($country);
+        }
+
+        $request = $this->requestFactory->createRequest('GET', $this->baseUrl . $uri)
+            ->withHeader('Accept', 'application/json');
+        $body = $this->sendForJson($request);
+        return Destination::listFromJson($body);
+    }
+
+    /**
+     * GET discovery schema — the Draft-2020 JSON Schema for a (destination, service)
+     * `data` payload, returned as an associative array. This is the same schema the
+     * server enforces at submit, so you can build and self-validate `data` up front.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws MilkywayApiException
+     */
+    public function serviceSchema(string $thirdPartyId, string $serviceId): array
+    {
+        if (trim($thirdPartyId) === '') {
+            throw new InvalidArgumentException('thirdPartyId is required.');
+        }
+        if (trim($serviceId) === '') {
+            throw new InvalidArgumentException('serviceId is required.');
+        }
+
+        $uri = self::PAYMENTS_PATH . '/discovery/' . rawurlencode($thirdPartyId)
+            . '/' . rawurlencode($serviceId) . '/schema';
+
+        $request = $this->requestFactory->createRequest('GET', $this->baseUrl . $uri)
+            ->withHeader('Accept', 'application/schema+json, application/json');
+        $body = $this->sendForJson($request);
+        return Json::decodeObject($body);
     }
 
     /**
