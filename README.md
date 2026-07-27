@@ -104,6 +104,33 @@ those values from their **literal textual form** and builds `BigDecimal` from th
 string, so no binary-float rounding ever touches your amounts — and the original
 scale (e.g. `100.00`) is preserved on the way out, too.
 
+## Discovery
+
+Before you pay, discover which recipient banks are reachable, what services they
+offer, and exactly what `data` each service expects — no out-of-band lookups.
+
+```php
+// List every destination, or pass an ISO 3166-1 alpha-2 country to filter.
+foreach ($client->discovery(country: 'TJ') as $destination) {
+    printf("%s (%s)\n", $destination->partnerName ?? $destination->thirdPartyId, $destination->country);
+    foreach ($destination->services as $service) {
+        printf("  - %s via %s, pays out in %s\n",
+            $service->serviceId,
+            $service->payoutMethod,
+            implode(', ', $service->payoutCurrencies ?? []));
+    }
+}
+
+// Fetch the Draft-2020 JSON Schema for a service's `data` payload. It is the same
+// schema the server enforces at submit, returned as an associative array.
+$schema = $client->serviceSchema('bank-beta', 'card-payout');
+```
+
+`discovery()` returns a `list<Destination>` (the `destinations` wrapper is unwrapped
+for you); the per-service `data` schema is omitted from the list and served on
+demand by `serviceSchema()`. Both are read-only `GET`s that still flow through the
+same auth + retry pipeline as every other call.
+
 ## The `data` field
 
 Each service requires extra per-partner fields (sender name, document number,
