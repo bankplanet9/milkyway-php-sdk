@@ -42,6 +42,10 @@ composer require guzzlehttp/guzzle nyholm/psr7
 ```php
 use Bankplanet9\MilkywayPayments\MilkywayOptions;
 use Bankplanet9\MilkywayPayments\MilkywayPaymentsClient;
+use Bankplanet9\MilkywayPayments\Model\IdentityDocumentType;
+use Bankplanet9\MilkywayPayments\Model\PartyInfo;
+use Bankplanet9\MilkywayPayments\Model\PartyName;
+use Bankplanet9\MilkywayPayments\Model\PartyType;
 use Bankplanet9\MilkywayPayments\Model\PayRequest;
 use Bankplanet9\MilkywayPayments\Model\PrecheckRequest;
 use Brick\Math\BigDecimal;
@@ -56,6 +60,18 @@ $client = new MilkywayPaymentsClient(new MilkywayOptions(
 // 1. Is the recipient bank's service online?
 $client->healthcheck('bank-beta', 'card-payout');
 
+// Your customer (the payer). Fill what you hold; the service's party profile in
+// discovery says which fields the recipient bank requires.
+$sender = new PartyInfo(
+    partyType:               PartyType::Natural,
+    name:                    new PartyName(first: 'Ivan', last: 'Petrov', full: 'Petrov Ivan Sergeevich'),
+    dateOfBirth:             '1990-04-18',
+    identityDocumentType:    IdentityDocumentType::Passport,
+    identityDocumentNumber:  'AB1234567',
+    identityDocumentCountry: 'TJ',
+    countryOfResidence:      'AE',
+);
+
 // 2. Quote the payment (FX markup + commission applied here).
 $quote = $client->precheck(new PrecheckRequest(
     thirdPartyIdDebit: 'bank-beta',
@@ -63,6 +79,7 @@ $quote = $client->precheck(new PrecheckRequest(
     recipientId:       'recipient-9999',
     amountCredit:      BigDecimal::of('100.00'),
     currencyCredit:    'USD',
+    senderInfo:        $sender,
 ));
 printf("Rate %s, debit %s %s, commission %s\n",
     $quote->rate, $quote->amountDebit, $quote->currencyDebit, $quote->commission);
@@ -75,7 +92,7 @@ $transactionId = $client->pay(new PayRequest(
     recipientId:       'recipient-9999',
     amountCredit:      BigDecimal::of('100.00'),
     currencyCredit:    'USD',
-    data:              ['passport' => 'AA1234567'],
+    senderInfo:        $sender,
 ), idempotencyKey: bin2hex(random_bytes(16)));
 
 // 4. Poll until the payment reaches a terminal status.
@@ -107,7 +124,8 @@ scale (e.g. `100.00`) is preserved on the way out, too.
 ## Discovery
 
 Before you pay, discover which recipient banks are reachable, what services they
-offer, and exactly what `data` each service expects — no out-of-band lookups.
+offer, which payer and beneficiary fields each service requires, and what `data`
+extras (if any) it expects — no out-of-band lookups.
 
 ```php
 // List every destination, or pass an ISO 3166-1 alpha-2 country to filter.
@@ -118,27 +136,80 @@ foreach ($client->discovery(country: 'TJ') as $destination) {
             $service->serviceId,
             $service->payoutMethod,
             implode(', ', $service->payoutCurrencies ?? []));
+        // Which senderInfo fields the recipient bank requires, e.g. name.first, date_of_birth.
+        printf("    sender requires %s\n",
+            implode(', ', $service->partyProfile?->senderInfo?->required ?? []));
     }
 }
 
-// Fetch the Draft-2020 JSON Schema for a service's `data` payload. It is the same
-// schema the server enforces at submit, returned as an associative array.
+// Fetch the Draft-2020 JSON Schema for a service's `data` extras (most services take
+// none). It is the same schema the server enforces at submit, returned as an
+// associative array.
 $schema = $client->serviceSchema('bank-beta', 'card-payout');
 ```
 
 `discovery()` returns a `list<Destination>` (the `destinations` wrapper is unwrapped
-for you); the per-service `data` schema is omitted from the list and served on
-demand by `serviceSchema()`. Both are read-only `GET`s that still flow through the
+for you). Each service carries its `partyProfile` — which `senderInfo` /
+`recipientInfo` fields the recipient bank requires and accepts (see below). The
+per-service `data` schema is omitted from the list and served on demand by
+`serviceSchema()`. Both are read-only `GET`s that still flow through the
 same auth + retry pipeline as every other call.
 
-## The `data` field
+## Payer and beneficiary (`senderInfo`, `recipientInfo`)
 
-Each service requires extra per-partner fields (sender name, document number,
-birthday, …) in the `data` array. **Which keys are required depends on your
-`serviceId` and the recipient bank** — look them up in the Услуги registry at
-<https://milkyway-docs.stage.planet9.ae>. The server validates `data` against the
-service's JSON Schema during precheck, so a missing field is rejected before any
-money moves.
+The identity of your customer (`senderInfo`, the originator) and of the beneficiary
+(`recipientInfo`) travels in two typed `PartyInfo` objects that are **the same for
+every recipient bank and service** (FATF Travel Rule / ISO 20022 / IVMS101
+originator–beneficiary data). Map your customer data to it once; each recipient
+bank's connector converts it to that bank's format. The account, card or phone stays
+in `senderId` / `recipientId` — these objects carry the person.
+
+| Argument | Wire field | Format |
+| --- | --- | --- |
+| `partyType` | `party_type` | `PartyType::Natural` (the default, always sent). `PartyType::Legal` is not accepted by the API yet. |
+| `name: new PartyName(first:, last:, full:)` | `name.first`, `name.last`, `name.full` | Text. `full` is the name as written in the document, family name first, with a patronymic if any. |
+| `dateOfBirth` | `date_of_birth` | ISO 8601 date, `YYYY-MM-DD`. |
+| `identityDocumentType` | `identity_document_type` | An `IdentityDocumentType` case: `Passport`, `NationalId`, `DriverLicense`, `ResidencePermit`, `TaxId`, `SocialSecurity`, `Other`. Required with `identityDocumentNumber`. |
+| `identityDocumentNumber` | `identity_document_number` | Series and number together, as in the document. |
+| `identityDocumentCountry`, `countryOfResidence` | `identity_document_country`, `country_of_residence` | ISO 3166-1 alpha-2, upper case (`TJ`). |
+| `address: new PartyAddress(...)` | `address` | `country` (required when an address is sent), `city`, `street`, `building`, `postalCode`, and `line` — up to 7 free-text lines. |
+
+Text values are at most 256 characters. Null and empty values are left off the wire.
+The server refuses a value of the wrong type or an invalid value with `400`
+(`MilkywayValidationException`) naming the field, e.g.
+`sender_info.identity_document_type`.
+
+**Which fields a service needs** is set by the recipient bank and published per
+service as `ServiceCapability::$partyProfile` in `discovery()`: `required` and
+`accepted` field paths (e.g. `name.first`, `date_of_birth`) for `senderInfo` and
+`recipientInfo`, and, when the bank takes only some document kinds,
+`identityDocumentTypes`. A precheck or pay missing a required field is refused with
+`400` naming it (`sender_info.date_of_birth: is required by the receiving bank for
+this service`). Send the fields you have; fields the bank does not use are ignored.
+
+```php
+use Bankplanet9\MilkywayPayments\Model\PartyAddress;
+
+$request = new PayRequest(
+    // ...
+    senderInfo:    $sender,
+    recipientInfo: new PartyInfo(
+        name:    new PartyName(first: 'Aziz', last: 'Karimov'),
+        address: new PartyAddress(country: 'TJ', city: 'Dushanbe'),
+    ),
+);
+```
+
+Identity must **not** be put in `data`: MilkyWay never reads it from there.
+
+## Service-specific extras (`data`)
+
+`data` carries only what a service needs beyond the parties (for example a test
+control field on the stage stub bank). Most services take no `data` fields. When one
+does, `serviceSchema()` returns its JSON Schema, and the recipient bank validates it
+during precheck. The human-browsable registry of banks, services, party profiles and
+`data` fields is the **Handbook** at
+<https://docs.planet9.ae/site/milkyway-handbook/en/> (section **Services**).
 
 ## Errors
 
@@ -147,11 +218,11 @@ Every API error throws a subclass of `MilkywayApiException` (carrying
 
 | HTTP | Exception | Meaning |
 | --- | --- | --- |
-| 400 | `MilkywayValidationException` | Bad request (invalid amount, missing field, unresolvable FX rate). |
+| 400 | `MilkywayValidationException` | Bad request (invalid amount, missing field — including a `senderInfo` / `recipientInfo` field the recipient bank requires). |
 | 401 | `MilkywayAuthException` | Token missing/invalid (also thrown if token acquisition fails). |
 | 402 | `MilkywayExposureBlockedException` | Payment would breach a block-action exposure limit. |
 | 404 | `MilkywayNotFoundException` | Transaction not found or not owned by your institution. |
-| 5xx | `MilkywayServiceUnavailableException` | API or downstream recipient unavailable (retried automatically first). |
+| 5xx | `MilkywayServiceUnavailableException` | API or downstream recipient unavailable, or the recipient bank quoted no usable FX rate for a cross-currency payment (retried automatically first). |
 
 ## Retries & idempotency
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Bankplanet9\MilkywayPayments\Tests;
 
 use Bankplanet9\MilkywayPayments\Exception\MilkywayNotFoundException;
+use Bankplanet9\MilkywayPayments\Model\IdentityDocumentType;
 use Bankplanet9\MilkywayPayments\Tests\Support\FakeTokenProvider;
 use Bankplanet9\MilkywayPayments\Tests\Support\MockHttpClient;
 use Bankplanet9\MilkywayPayments\Tests\Support\TestSupport;
@@ -51,6 +52,37 @@ final class DiscoveryTest extends TestCase
         self::assertStringEndsWith('/payments/v1/discovery', (string) $req->getUri());
         self::assertSame('', $req->getUri()->getQuery());
         self::assertSame('Bearer test-token', $req->getHeaderLine('Authorization'));
+    }
+
+    public function testDiscoveryDecodesPartyProfileAndToleratesItsAbsence(): void
+    {
+        $body = '{"destinations":[{"third_party_id":"bank-beta","services":['
+            . '{"service_id":"card-payout","payout_method":"card","party_profile":{'
+            . '"sender_info":{"required":["name.first","name.last","date_of_birth",'
+            . '"identity_document_type","identity_document_number"],'
+            . '"accepted":["name.full"],"identity_document_types":["passport"]},'
+            . '"recipient_info":{"required":["name.full"]}}},'
+            . '{"service_id":"wallet","payout_method":"wallet_credit"}]}]}';
+        $mock = MockHttpClient::always(200, $body);
+        $client = TestSupport::buildClient($mock, new FakeTokenProvider());
+
+        $services = $client->discovery()[0]->services;
+
+        $profile = $services[0]->partyProfile;
+        self::assertNotNull($profile);
+        self::assertNotNull($profile->senderInfo);
+        self::assertSame(
+            ['name.first', 'name.last', 'date_of_birth', 'identity_document_type', 'identity_document_number'],
+            $profile->senderInfo->required,
+        );
+        self::assertSame(['name.full'], $profile->senderInfo->accepted);
+        self::assertSame([IdentityDocumentType::Passport->value], $profile->senderInfo->identityDocumentTypes);
+        self::assertNotNull($profile->recipientInfo);
+        self::assertSame(['name.full'], $profile->recipientInfo->required);
+        self::assertNull($profile->recipientInfo->accepted);
+        self::assertNull($profile->recipientInfo->identityDocumentTypes);
+
+        self::assertNull($services[1]->partyProfile);
     }
 
     public function testDiscoveryWithCountryAddsQuery(): void

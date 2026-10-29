@@ -101,6 +101,19 @@ final class Json
     }
 
     /**
+     * Drop null, empty-string and empty-array members of a request object, so the
+     * wire never carries `""`, `[]` or an empty nested object (e.g. a party's `name`
+     * or `address`).
+     *
+     * @param array<string, mixed> $members
+     * @return array<string, mixed>
+     */
+    public static function withoutEmpty(array $members): array
+    {
+        return array_filter($members, static fn (mixed $v): bool => $v !== null && $v !== '' && $v !== []);
+    }
+
+    /**
      * @param mixed $node
      * @return array<string, string> placeholder => numeric literal
      */
