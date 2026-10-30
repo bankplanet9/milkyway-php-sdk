@@ -15,6 +15,10 @@ require __DIR__ . '/../vendor/autoload.php';
 use Bankplanet9\MilkywayPayments\Exception\MilkywayApiException;
 use Bankplanet9\MilkywayPayments\MilkywayOptions;
 use Bankplanet9\MilkywayPayments\MilkywayPaymentsClient;
+use Bankplanet9\MilkywayPayments\Model\IdentityDocumentType;
+use Bankplanet9\MilkywayPayments\Model\PartyInfo;
+use Bankplanet9\MilkywayPayments\Model\PartyName;
+use Bankplanet9\MilkywayPayments\Model\PartyType;
 use Bankplanet9\MilkywayPayments\Model\PayRequest;
 use Bankplanet9\MilkywayPayments\Model\PrecheckRequest;
 use Brick\Math\BigDecimal;
@@ -29,12 +33,25 @@ $client = new MilkywayPaymentsClient(new MilkywayOptions(
 try {
     echo 'Health: ' . $client->healthcheck('bank-beta', 'card-payout') . PHP_EOL;
 
+    // The payer's identity goes in senderInfo (never in data). The service's party
+    // profile in discovery lists which fields the recipient bank requires.
+    $sender = new PartyInfo(
+        partyType:               PartyType::Natural,
+        name:                    new PartyName(first: 'Ivan', last: 'Petrov', full: 'Petrov Ivan Sergeevich'),
+        dateOfBirth:             '1990-04-18',
+        identityDocumentType:    IdentityDocumentType::Passport,
+        identityDocumentNumber:  'AB1234567',
+        identityDocumentCountry: 'TJ',
+        countryOfResidence:      'AE',
+    );
+
     $quote = $client->precheck(new PrecheckRequest(
         thirdPartyIdDebit: 'bank-beta',
         serviceId:         'card-payout',
         recipientId:       'recipient-9999',
         amountCredit:      BigDecimal::of('100.00'),
         currencyCredit:    'USD',
+        senderInfo:        $sender,
     ));
     printf("Rate %s, debit %s %s, commission %s\n",
         $quote->rate, $quote->amountDebit, $quote->currencyDebit, $quote->commission);
@@ -46,7 +63,7 @@ try {
         recipientId:       'recipient-9999',
         amountCredit:      BigDecimal::of('100.00'),
         currencyCredit:    'USD',
-        data:              ['passport' => 'AA1234567'],
+        senderInfo:        $sender,
     ), idempotencyKey: bin2hex(random_bytes(16)));
 
     $result = $client->waitForCompletion($transactionId);

@@ -119,8 +119,10 @@ final class MilkywayPaymentsClient
     /**
      * GET discovery — the catalog of payout destinations and the services each
      * offers. Pass an ISO 3166-1 alpha-2 country (case-insensitive) to filter to
-     * one country, or omit it to list every destination. The per-service `data`
-     * JSON Schema is excluded here — fetch it via {@see self::serviceSchema()}.
+     * one country, or omit it to list every destination. Each service carries its
+     * party profile (which `senderInfo` / `recipientInfo` fields the recipient bank
+     * requires); the per-service `data` JSON Schema is excluded here — fetch it via
+     * {@see self::serviceSchema()}.
      *
      * @return list<Destination>
      *
@@ -141,8 +143,9 @@ final class MilkywayPaymentsClient
 
     /**
      * GET discovery schema — the Draft-2020 JSON Schema for a (destination, service)
-     * `data` payload, returned as an associative array. This is the same schema the
-     * server enforces at submit, so you can build and self-validate `data` up front.
+     * `data` extras (never identity; most services take none), returned as an
+     * associative array. This is the same schema the server enforces at submit, so you
+     * can build and self-validate `data` up front.
      *
      * @return array<string, mixed>
      *

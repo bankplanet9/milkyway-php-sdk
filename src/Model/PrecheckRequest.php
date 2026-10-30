@@ -19,8 +19,14 @@ final class PrecheckRequest
      * @param string $recipientId       Recipient identifier within the chosen service.
      * @param BigDecimal $amountCredit  Amount in the credit currency (must be > 0).
      * @param string $currencyCredit    Credit currency (ISO-4217), e.g. USD.
-     * @param array<string, mixed>|null $data Service-specific payload validated server-side
-     *                                  against the service's JSON Schema. Omitted from the wire when null.
+     * @param array<string, mixed>|null $data A service's non-identity extras, validated by the recipient
+     *                                  bank during precheck. Never the payer's or beneficiary's identity — that
+     *                                  goes in $senderInfo / $recipientInfo. Most services take no fields; when
+     *                                  one does, serviceSchema() returns its JSON Schema. Omitted from the wire when null.
+     * @param PartyInfo|null $senderInfo Your customer, the originator (`sender_info`). Which fields are
+     *                                  required is the service's party profile from discovery. Omitted when null.
+     * @param PartyInfo|null $recipientInfo The beneficiary (`recipient_info`). Which fields are required is
+     *                                  the service's party profile from discovery. Omitted when null.
      */
     public function __construct(
         public readonly string $thirdPartyIdDebit,
@@ -29,6 +35,8 @@ final class PrecheckRequest
         public readonly BigDecimal $amountCredit,
         public readonly string $currencyCredit,
         public readonly ?array $data = null,
+        public readonly ?PartyInfo $senderInfo = null,
+        public readonly ?PartyInfo $recipientInfo = null,
     ) {
     }
 
@@ -43,6 +51,12 @@ final class PrecheckRequest
             'amount_credit' => MoneyJson::number($this->amountCredit),
             'currency_credit' => $this->currencyCredit,
         ];
+        if ($this->senderInfo !== null) {
+            $payload['sender_info'] = $this->senderInfo->toArray();
+        }
+        if ($this->recipientInfo !== null) {
+            $payload['recipient_info'] = $this->recipientInfo->toArray();
+        }
         if ($this->data !== null) {
             $payload['data'] = $this->data;
         }

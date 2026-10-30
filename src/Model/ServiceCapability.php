@@ -9,8 +9,9 @@ namespace Bankplanet9\MilkywayPayments\Model;
  * method, a human hint for the recipient identifier, and the currencies the
  * recipient can be credited in.
  *
- * The `data` JSON Schema is intentionally NOT carried here — the discovery list
- * omits it; fetch it on demand via {@see \Bankplanet9\MilkywayPayments\MilkywayPaymentsClient::serviceSchema()}.
+ * The party profile says which `senderInfo` / `recipientInfo` fields the recipient
+ * bank requires. The `data` JSON Schema is intentionally NOT carried here — the
+ * discovery list omits it; fetch it on demand via {@see \Bankplanet9\MilkywayPayments\MilkywayPaymentsClient::serviceSchema()}.
  */
 final class ServiceCapability
 {
@@ -19,12 +20,15 @@ final class ServiceCapability
      * @param string $payoutMethod Payout method the service delivers over.
      * @param string|null $recipient A human description of the recipient identifier the sender supplies.
      * @param list<string>|null $payoutCurrencies Currencies the recipient can be credited in.
+     * @param PartyProfile|null $partyProfile Which {@see PartyInfo} fields the recipient bank requires and
+     *                                  accepts for this service. Null when the bank has published none.
      */
     public function __construct(
         public readonly string $serviceId,
         public readonly string $payoutMethod,
         public readonly ?string $recipient = null,
         public readonly ?array $payoutCurrencies = null,
+        public readonly ?PartyProfile $partyProfile = null,
     ) {
     }
 
@@ -38,6 +42,7 @@ final class ServiceCapability
             isset($obj['payout_method']) && is_string($obj['payout_method']) ? $obj['payout_method'] : '',
             isset($obj['recipient']) && is_string($obj['recipient']) ? $obj['recipient'] : null,
             self::stringList($obj, 'payout_currencies'),
+            isset($obj['party_profile']) && is_array($obj['party_profile']) ? PartyProfile::fromArray($obj['party_profile']) : null,
         );
     }
 
