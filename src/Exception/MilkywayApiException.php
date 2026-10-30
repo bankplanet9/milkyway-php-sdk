@@ -11,7 +11,7 @@ use Throwable;
 /**
  * Base exception for all errors returned by the MilkyWay Payments API.
  * Carries the HTTP status code, the server's `error` message when present, and
- * that `error` value as {@see self::getErrorCode()} (e.g. `ErrPaymentRejected`).
+ * that message's leading code as {@see self::getErrorCode()} (e.g. `ErrPaymentRejected`).
  */
 class MilkywayApiException extends RuntimeException
 {
@@ -32,7 +32,7 @@ class MilkywayApiException extends RuntimeException
         parent::__construct($message, 0, $previous);
         $this->statusCode = $statusCode;
         $this->responseBody = $responseBody;
-        $this->errorCode = $responseBody !== null ? Json::extractStringField($responseBody, 'error') : null;
+        $this->errorCode = $responseBody !== null ? Json::errorCode(Json::extractErrorMessage($responseBody)) : null;
     }
 
     public function getStatusCode(): int
@@ -46,10 +46,10 @@ class MilkywayApiException extends RuntimeException
     }
 
     /**
-     * The `error` value of the JSON error body, verbatim — a code such as
-     * `ErrPaymentRejected`, `ErrRecipientBankError` or `ErrServiceUnavailable`, or
-     * a code followed by detail (`ErrValidationFailed: amount_credit: ...`).
-     * Null when the body is absent, not JSON, or has no string `error`.
+     * The leading `Err...` identifier of the server's error message, e.g.
+     * `ErrPaymentRejected`, `ErrRecipientBankError`, or `ErrValidationFailed` for
+     * `ErrValidationFailed: amount_credit: ...`. Null when the message does not
+     * start with one; the full text stays in {@see self::getMessage()}.
      */
     public function getErrorCode(): ?string
     {

@@ -215,8 +215,10 @@ during precheck. The human-browsable registry of banks, services, party profiles
 
 Every API error throws a subclass of `MilkywayApiException`, carrying
 `getStatusCode()`, the server's message via `getMessage()` / `getResponseBody()`,
-and the body's `error` value verbatim via `getErrorCode()` (e.g.
-`ErrPaymentRejected`; null when the body is not JSON):
+and the message's leading `Err...` code via `getErrorCode()` (e.g.
+`ErrPaymentRejected`, or `ErrValidationFailed` for
+`ErrValidationFailed: amount_credit: ...`; null when the message does not start
+with such a code):
 
 | HTTP | Exception | Meaning |
 | --- | --- | --- |
