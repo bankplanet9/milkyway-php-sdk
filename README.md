@@ -14,7 +14,7 @@ Batteries included:
 - **Keycloak client-credentials auth** with in-memory token caching and automatic
   refresh (plus a one-shot refresh-and-replay on `401`).
 - **Retries** with exponential backoff + jitter on transient failures (5xx, 408,
-  network), while deterministic errors (400/401/402/404) are never retried.
+  network), while deterministic errors (400/401/402/404/422) are never retried.
 - **Typed models & exceptions** — money is [`brick/math`](https://github.com/brick/math)
   `BigDecimal` (never `float`), status is a backed `enum`, and each HTTP error maps
   to a specific exception type.
@@ -213,23 +213,74 @@ during precheck. The human-browsable registry of banks, services, party profiles
 
 ## Errors
 
-Every API error throws a subclass of `MilkywayApiException` (carrying
-`getStatusCode()` and the server's message via `getMessage()` / `getResponseBody()`):
+Every API error throws a subclass of `MilkywayApiException`, carrying
+`getStatusCode()`, the server's message via `getMessage()` / `getResponseBody()`,
+and the body's `error` value verbatim via `getErrorCode()` (e.g.
+`ErrPaymentRejected`; null when the body is not JSON):
 
 | HTTP | Exception | Meaning |
 | --- | --- | --- |
-| 400 | `MilkywayValidationException` | Bad request (invalid amount, missing field — including a `senderInfo` / `recipientInfo` field the recipient bank requires). |
+| 400 | `MilkywayValidationException` | Bad request (invalid amount, missing field — including a `senderInfo` / `recipientInfo` field the recipient bank requires — or a recipient the bank calls invalid). `getField()` names the field at fault when there is one, e.g. `amount_credit`, `currency_credit`, `recipient_id`, `sender_info.date_of_birth`. |
 | 401 | `MilkywayAuthException` | Token missing/invalid (also thrown if token acquisition fails). |
 | 402 | `MilkywayExposureBlockedException` | Payment would breach a block-action exposure limit. |
 | 404 | `MilkywayNotFoundException` | Transaction not found or not owned by your institution. |
-| 5xx | `MilkywayServiceUnavailableException` | API or downstream recipient unavailable, or the recipient bank quoted no usable FX rate for a cross-currency payment (retried automatically first). |
+| 422 | `MilkywayPaymentRejectedException` | `ErrPaymentRejected` from precheck or pay: the recipient bank refused the payment on its merits (a limit, a blocked account). Repeating it will not help, so it is never retried; nothing was created. |
+| 502 | `MilkywayRecipientBankException` | `ErrRecipientBankError` from precheck, pay or cancel: the recipient bank's connector failed in a way MilkyWay could not classify. Nothing was created or cancelled; retry later or use another service. Subclass of `MilkywayServiceUnavailableException`. |
+| 5xx | `MilkywayServiceUnavailableException` | API or downstream recipient unavailable, or the recipient bank quoted no usable FX rate for a cross-currency payment. A 503 from precheck, pay or cancel names the failing service via `getServiceId()` / `getThirdPartyId()`. |
+
+Other statuses (e.g. cancel's `403 ErrPaymentCannotBeCanceled`, `409`, `429`) throw
+the base `MilkywayApiException`. 5xx responses — 502 included — are retried
+automatically before they are thrown.
+
+```php
+use Bankplanet9\MilkywayPayments\Exception\MilkywayPaymentRejectedException;
+use Bankplanet9\MilkywayPayments\Exception\MilkywayRecipientBankException;
+use Bankplanet9\MilkywayPayments\Exception\MilkywayServiceUnavailableException;
+use Bankplanet9\MilkywayPayments\Exception\MilkywayValidationException;
+
+try {
+    $transactionId = $client->pay($request, idempotencyKey: $orderId);
+} catch (MilkywayValidationException $e) {
+    // Fix the request: $e->getField() names the field, e.g. "recipient_id".
+} catch (MilkywayPaymentRejectedException $e) {
+    // The recipient bank declined. Do not resend the same payment.
+} catch (MilkywayRecipientBankException $e) {
+    // The recipient bank's connector failed. Retry later or route elsewhere.
+} catch (MilkywayServiceUnavailableException $e) {
+    // Recipient service down: $e->getServiceId(), $e->getThirdPartyId().
+}
+```
+
+### Failure reasons on a payment's status
+
+When a payment reaches a terminal status, `PostcheckResult::$error` carries the
+recipient bank's reason as a **code**, never free text, when it gave one. It stays
+a plain string; compare it with the `StatusReason` constants:
+
+| Constant | Code |
+| --- | --- |
+| `StatusReason::PAYMENT_REJECTED` | `ErrPaymentRejected` — the bank declined (also any reason it gave without a code). |
+| `StatusReason::RECIPIENT_NOT_FOUND` | `ErrRecipientNotFound` |
+| `StatusReason::RECIPIENT_INVALID` | `ErrRecipientInvalid` |
+| `StatusReason::SERVICE_UNAVAILABLE` | `ErrServiceUnavailable` |
+| `StatusReason::PAYMENT_CANNOT_BE_CANCELED` | `ErrPaymentCannotBeCanceled` |
+
+```php
+use Bankplanet9\MilkywayPayments\StatusReason;
+use Bankplanet9\MilkywayPayments\TransactionStatus;
+
+$result = $client->waitForCompletion($transactionId);
+if ($result->status === TransactionStatus::Failed && $result->error === StatusReason::RECIPIENT_NOT_FOUND) {
+    // Ask your customer to check the recipient's account / card / phone.
+}
+```
 
 ## Retries & idempotency
 
 Transient failures (5xx, 408, network exceptions) are retried automatically with
 exponential backoff + jitter, tunable via `MilkywayOptions`
-(`maxRetries`, `retryBaseDelay`, `requestTimeout`). Deterministic 4xx responses are
-never retried.
+(`maxRetries`, `retryBaseDelay`, `requestTimeout`). Deterministic 4xx responses
+(including `422`) are never retried.
 
 **`pay()` is only auto-retried when you supply an `idempotencyKey`** — without one,
 a retry could create a duplicate payment, so the SDK sends it exactly once.

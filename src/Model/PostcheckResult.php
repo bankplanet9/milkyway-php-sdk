@@ -13,7 +13,11 @@ final class PostcheckResult
     public function __construct(
         public readonly int $transactionId,
         public readonly TransactionStatus $status,
-        /** Failure detail; present only when the payment failed. */
+        /**
+         * Code of the recipient bank's reason for a terminal outcome, when it gave
+         * one — compare against the {@see \Bankplanet9\MilkywayPayments\StatusReason}
+         * constants. Never free text; null when no reason was given.
+         */
         public readonly ?string $error = null,
     ) {
     }

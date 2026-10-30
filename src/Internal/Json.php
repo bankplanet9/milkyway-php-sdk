@@ -132,6 +132,27 @@ final class Json
     }
 
     /**
+     * Read a top-level string member of a JSON object body (e.g. `error`, `field`,
+     * `service_id`). Returns null when the body is not a JSON object or the member
+     * is absent or not a string.
+     */
+    public static function extractStringField(string $body, string $key): ?string
+    {
+        if (trim($body) === '') {
+            return null;
+        }
+        try {
+            $decoded = json_decode($body, true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return null;
+        }
+        if (is_array($decoded) && isset($decoded[$key]) && is_string($decoded[$key])) {
+            return $decoded[$key];
+        }
+        return null;
+    }
+
+    /**
      * Pull the server's `{"error": "..."}` message out of a response body, or the
      * trimmed plain-text body when it is not JSON. Returns null when neither yields
      * a usable message.

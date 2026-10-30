@@ -15,7 +15,7 @@ use Psr\Http\Message\ResponseInterface;
  *
  * Retries transient failures — HTTP 5xx, 408, and network exceptions
  * ({@see ClientExceptionInterface}) — with exponential backoff plus jitter.
- * Deterministic outcomes (400/401/402/404 and other 4xx) are never retried.
+ * Deterministic outcomes (400/401/402/404/422 and other 4xx) are never retried.
  *
  * A request carrying the {@see self::NO_RETRY_HEADER} header is sent exactly once
  * (used for a non-idempotent `pay` without an Idempotency-Key, where a retry could

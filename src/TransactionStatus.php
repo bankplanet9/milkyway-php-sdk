@@ -19,7 +19,7 @@ enum TransactionStatus: int
     /** Cancelled (terminal). */
     case Cancelled = 2;
 
-    /** Failed (terminal). Inspect the accompanying error message. */
+    /** Failed (terminal). The result's `error` carries the reason code ({@see StatusReason}). */
     case Failed = 3;
 
     /** Cancellation requested, awaiting confirmation. */
