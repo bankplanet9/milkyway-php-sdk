@@ -153,6 +153,21 @@ final class Json
     }
 
     /**
+     * The leading `Err...` identifier of a server error message: the text before
+     * the first `:`, trimmed, when it starts with `Err` and holds only ASCII
+     * letters, digits and `_` (`ErrValidationFailed: amount_credit: ...` yields
+     * `ErrValidationFailed`). Null otherwise.
+     */
+    public static function errorCode(?string $message): ?string
+    {
+        if ($message === null) {
+            return null;
+        }
+        $code = trim(explode(':', $message, 2)[0]);
+        return preg_match('/^Err[A-Za-z0-9_]*$/', $code) === 1 ? $code : null;
+    }
+
+    /**
      * Pull the server's `{"error": "..."}` message out of a response body, or the
      * trimmed plain-text body when it is not JSON. Returns null when neither yields
      * a usable message.

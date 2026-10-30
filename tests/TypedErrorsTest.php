@@ -165,6 +165,49 @@ final class TypedErrorsTest extends TestCase
         }
     }
 
+    public function testErrorCodeIsTheLeadingErrWordOfTheMessage(): void
+    {
+        $mock = MockHttpClient::always(400,
+            '{"error":"ErrValidationFailed: amount_credit: 1.234 has more decimal places than USD allows (2)","field":"amount_credit"}');
+        $client = TestSupport::buildClient($mock, new FakeTokenProvider());
+
+        try {
+            $client->precheck($this->newPrecheck());
+            self::fail('expected MilkywayValidationException');
+        } catch (MilkywayValidationException $ex) {
+            self::assertSame('ErrValidationFailed', $ex->getErrorCode());
+            self::assertSame('amount_credit', $ex->getField());
+            self::assertStringStartsWith('ErrValidationFailed: amount_credit: 1.234', $ex->getMessage());
+        }
+    }
+
+    public function testErrorCodeIsNullWhenTheMessageHasNoLeadingErrWord(): void
+    {
+        $mock = MockHttpClient::always(400,
+            '{"error":"sender_info.date_of_birth: is required by the receiving bank for this service"}');
+        $client = TestSupport::buildClient($mock, new FakeTokenProvider());
+
+        try {
+            $client->precheck($this->newPrecheck());
+            self::fail('expected MilkywayValidationException');
+        } catch (MilkywayValidationException $ex) {
+            self::assertNull($ex->getErrorCode());
+        }
+    }
+
+    public function testErrorCodeIsReadFromAPlainTextErrBody(): void
+    {
+        $mock = MockHttpClient::always(503, 'ErrServiceUnavailable', 'text/plain');
+        $client = TestSupport::buildClient($mock, new FakeTokenProvider(), TestSupport::options(maxRetries: 0));
+
+        try {
+            $client->postcheck(1);
+            self::fail('expected MilkywayServiceUnavailableException');
+        } catch (MilkywayServiceUnavailableException $ex) {
+            self::assertSame(StatusReason::SERVICE_UNAVAILABLE, $ex->getErrorCode());
+        }
+    }
+
     public function testErrorCodeIsNullForNonJsonBody(): void
     {
         $mock = MockHttpClient::always(500, 'upstream exploded', 'text/plain');
