@@ -10,6 +10,8 @@ use Bankplanet9\MilkywayPayments\Exception\MilkywayApiException;
 use Bankplanet9\MilkywayPayments\Exception\MilkywayAuthException;
 use Bankplanet9\MilkywayPayments\Exception\MilkywayExposureBlockedException;
 use Bankplanet9\MilkywayPayments\Exception\MilkywayNotFoundException;
+use Bankplanet9\MilkywayPayments\Exception\MilkywayPaymentRejectedException;
+use Bankplanet9\MilkywayPayments\Exception\MilkywayRecipientBankException;
 use Bankplanet9\MilkywayPayments\Exception\MilkywayServiceUnavailableException;
 use Bankplanet9\MilkywayPayments\Exception\MilkywayValidationException;
 use Bankplanet9\MilkywayPayments\Internal\AuthHttpClient;
@@ -172,6 +174,11 @@ final class MilkywayPaymentsClient
     /**
      * POST precheck — quote rate + commission without creating a payment.
      *
+     * @throws MilkywayValidationException       400; {@see MilkywayValidationException::getField()} names the field.
+     * @throws MilkywayExposureBlockedException  402.
+     * @throws MilkywayPaymentRejectedException  422 — the recipient bank refused the payment; not retried.
+     * @throws MilkywayRecipientBankException    502 — the recipient bank's connector failed (a 5xx subclass).
+     * @throws MilkywayServiceUnavailableException 5xx — the recipient service is unavailable.
      * @throws MilkywayApiException
      */
     public function precheck(PrecheckRequest $request): PrecheckResult
@@ -187,6 +194,11 @@ final class MilkywayPaymentsClient
      * Pass an $idempotencyKey to make the call safely retryable; without one the
      * SDK sends it exactly once (a retry could create a duplicate payment).
      *
+     * @throws MilkywayValidationException       400; {@see MilkywayValidationException::getField()} names the field.
+     * @throws MilkywayExposureBlockedException  402.
+     * @throws MilkywayPaymentRejectedException  422 — the recipient bank refused the payment; not retried.
+     * @throws MilkywayRecipientBankException    502 — the recipient bank's connector failed (a 5xx subclass).
+     * @throws MilkywayServiceUnavailableException 5xx — the recipient service is unavailable.
      * @throws MilkywayApiException
      */
     public function pay(PayRequest $request, ?string $idempotencyKey = null): int
@@ -221,6 +233,12 @@ final class MilkywayPaymentsClient
     /**
      * POST cancel — request cancellation, returning the resulting status.
      *
+     * A 403 (`ErrPaymentCannotBeCanceled`) surfaces as a {@see MilkywayApiException}
+     * with status 403; the payment is unchanged.
+     *
+     * @throws MilkywayNotFoundException         404 — not found or not yours.
+     * @throws MilkywayRecipientBankException    502 — the recipient bank's connector failed (a 5xx subclass).
+     * @throws MilkywayServiceUnavailableException 503 — the recipient bank could not be reached.
      * @throws MilkywayApiException
      */
     public function cancel(int $transactionId): CancelResult
@@ -306,6 +324,8 @@ final class MilkywayPaymentsClient
             $status === 401 => new MilkywayAuthException($message, $body),
             $status === 402 => new MilkywayExposureBlockedException($message, $body),
             $status === 404 => new MilkywayNotFoundException($message, $body),
+            $status === 422 => new MilkywayPaymentRejectedException($message, $body),
+            $status === 502 => new MilkywayRecipientBankException($message, $body),
             $status >= 500 => new MilkywayServiceUnavailableException($status, $message, $body),
             default => new MilkywayApiException($status, $message, $body),
         };
